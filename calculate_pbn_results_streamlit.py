@@ -7,6 +7,7 @@ PBN Results Calculator Streamlit Application
 
 # todo:
 # 1. looks like a bug has crept in when using DDS_Camrose24_1- BENCAM22 v WBridge5. Looks like X (double) is being parsed incorrectly.
+# 2. before production, ask claude to check for any bugs and concurrency issues.
 
 
 import streamlit as st
@@ -142,6 +143,14 @@ def display_experiments(df):
         # st.write(f"Frequency where exceeding ExpMaxScore_Diff_NS: All:{all} Open:{open} Closed:{closed} Open-Closed:{open-closed}")
 
 
+def get_session_duckdb_connection():
+    """Get or create a DuckDB connection for the current session."""
+    if 'con' not in st.session_state or st.session_state.con is None:
+        st.session_state.con = duckdb.connect()
+        st.session_state.con_register_name = 'self'
+    return st.session_state.con
+
+
 def ShowDataFrameTable(df, key, query='SELECT * FROM self', show_sql_query=True):
     if show_sql_query and st.session_state.show_sql_query:
         st.text(f"SQL Query: {query}")
@@ -169,7 +178,9 @@ def ShowDataFrameTable(df, key, query='SELECT * FROM self', show_sql_query=True)
     #         return None
     
     try:
-        result_df = st.session_state.con.execute(query).pl()
+        # Use session-specific connection
+        con = get_session_duckdb_connection()
+        result_df = con.execute(query).pl()
         if show_sql_query and st.session_state.show_sql_query:
             st.text(f"Result is a dataframe of {len(result_df)} rows.")
         streamlitlib.ShowDataFrameTable(result_df, key) # requires pandas dataframe.
@@ -378,7 +389,10 @@ def change_game_state():
         st.session_state.df = Process_PBN(path_url,boards,df,everything_df)
         st.session_state.df = filter_dataframe(st.session_state.df, st.session_state.group_id, st.session_state.session_id, st.session_state.player_id, st.session_state.partner_id)
         assert st.session_state.df.select(pl.col(pl.Object)).is_empty(), f"Found Object columns: {[col for col, dtype in st.session_state.df.schema.items() if dtype == pl.Object]}"
-        st.session_state.con.register(st.session_state.con_register_name, st.session_state.df) # ugh, df['scores_l'] must be previously dropped otherwise this hangs. reason unknown.
+        
+        # Register dataframe with session-specific connection
+        con = get_session_duckdb_connection()
+        con.register(st.session_state.con_register_name, st.session_state.df) # ugh, df['scores_l'] must be previously dropped otherwise this hangs. reason unknown.
 
     return
 
@@ -784,14 +798,16 @@ class PBNResultsCalculator(PostmortemBase):
             'show_sql_query': True, # os.getenv('STREAMLIT_ENV') == 'development',
             'use_historical_data': False,
             'do_not_cache_df': True, # todo: set to True for production
-            'con': duckdb.connect(), # IMPORTANT: duckdb.connect() hung until previous version was installed.
-            'con_register_name': 'self',
+            # Note: DuckDB connection is now created per-session via get_session_duckdb_connection()
             'main_section_container': st.empty(),
             'app_datetime': datetime.fromtimestamp(pathlib.Path(__file__).stat().st_mtime, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'current_datetime': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         for key, value in first_time_defaults.items():
             st.session_state[key] = value
+
+        # Initialize session-specific DuckDB connection
+        get_session_duckdb_connection()
 
         self.reset_game_data()
         self.initialize_website_specific()
