@@ -16,8 +16,8 @@
             ],
             "env": {
                 "STREAMLIT_APP": "calculate_pbn_results_streamlit.py",
-                "STREAMLIT_ENV": "development",
-                "STREAMLIT_QUERY_STRING": "",
+                "STREAMLIT_ENV": "sql_query_mode",
+                "STREAMLIT_QUERY_STRING": "", // todo: add player id?
             }
         }
     ]
