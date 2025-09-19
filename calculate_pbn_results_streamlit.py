@@ -585,6 +585,14 @@ def create_sidebar():
     st.session_state.debug_favorites_file = pathlib.Path(
         'favorites/debug.favorites.json')
     read_configs()
+
+    # Automated Postmortem Apps
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Automated Postmortem Apps**")
+    st.sidebar.markdown("🔗 [ACBL Postmortem](https://acbl.postmortem.chat)")
+    st.sidebar.markdown("🔗 [French ffbridge Postmortem](https://ffbridge.postmortem.chat)")
+    #st.sidebar.markdown("🔗 [BridgeWebs Postmortem](https://bridgewebs.postmortem.chat)")
+    
     return
 
 # todo: put this in PBNResultsCalculator class?
