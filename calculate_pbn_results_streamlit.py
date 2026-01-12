@@ -47,9 +47,9 @@ sys.path.append(str(pathlib.Path.cwd().joinpath('streamlitlib')))  # global
 sys.path.append(str(pathlib.Path.cwd().joinpath('mlBridgeLib')))  # global # Requires "./mlBridgeLib" be in extraPaths in .vscode/settings.json
 
 import streamlitlib
-from mlBridgeLib.mlBridgePostmortemLib import PostmortemBase
+from mlBridge.mlBridgePostmortemLib import PostmortemBase
 import mlBridgeEndplayLib
-from mlBridgeLib.mlBridgeAugmentLib import (
+from mlBridge.mlBridgeAugmentLib import (
     AllAugmentations,
 )#import mlBridgeBiddingLib
 
