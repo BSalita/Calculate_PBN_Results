@@ -43,12 +43,14 @@ from endplay.types import Deal, Contract, Denom, Player, Penalty, Vul
 from endplay.dds import par, calc_all_tables
 from endplay.dealer import generate_deals
 
-sys.path.append(str(pathlib.Path.cwd().joinpath('streamlitlib')))  # global
-sys.path.append(str(pathlib.Path.cwd().joinpath('mlBridgeLib')))  # global # Requires "./mlBridgeLib" be in extraPaths in .vscode/settings.json
+_APP_DIR = pathlib.Path(__file__).resolve().parent
+for _p in (_APP_DIR, _APP_DIR / 'mlBridge', _APP_DIR / 'streamlitlib'):
+    if _p.is_dir() and str(_p) not in sys.path:
+        sys.path.append(str(_p))
 
 import streamlitlib
 from mlBridge.mlBridgePostmortemLib import PostmortemBase
-import mlBridgeEndplayLib
+from mlBridge import mlBridgeEndplayLib
 from mlBridge.mlBridgeAugmentLib import (
     AllAugmentations,
 )#import mlBridgeBiddingLib
