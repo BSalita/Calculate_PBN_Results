@@ -48,8 +48,11 @@ for _p in (_APP_DIR, _APP_DIR / 'mlBridge', _APP_DIR / 'streamlitlib'):
     if _p.is_dir() and str(_p) not in sys.path:
         sys.path.append(str(_p))
 
+from typing import Any
+
 import streamlitlib
 from mlBridge.mlBridgePostmortemLib import PostmortemBase
+from mlBridge.mlBridgeLib import cast_numeric_display_columns
 from mlBridge import mlBridgeEndplayLib
 from mlBridge.mlBridgeAugmentLib import (
     AllAugmentations,
@@ -183,15 +186,61 @@ def ShowDataFrameTable(df, key, query='SELECT * FROM self', show_sql_query=True)
     try:
         # Use session-specific connection
         con = get_session_duckdb_connection()
-        result_df = con.execute(query).pl()
-        if show_sql_query and st.session_state.show_sql_query:
-            st.text(f"Result is a dataframe of {len(result_df)} rows.")
+        result_df = cast_numeric_display_columns(con.execute(query).pl())
+        st.text(f"Result is a dataframe of {len(result_df)} rows.")
         streamlitlib.ShowDataFrameTable(result_df, key) # requires pandas dataframe.
     except Exception as e:
         st.error(f"duckdb exception: error:{e} query:{query}")
         return None
     
     return result_df
+
+
+# ---- URL Query Parameter Sync ----
+# Shareable/bookmarkable: ?url=...&show_sql_query=1&sd_samples=10
+_URL_PARAM_KEYS = ('url', 'show_sql_query', 'sd_samples')
+
+
+def _set_query_param(name: str, value: Any) -> None:
+    """Set or remove a single URL query parameter to match a session state value."""
+    if value is None or value == '':
+        if name in st.query_params:
+            del st.query_params[name]
+    else:
+        st.query_params[name] = str(value)
+
+
+def sync_url_params_from_state() -> None:
+    """Write the currently selected sidebar options back to the URL query string."""
+    _set_query_param('url', st.session_state.get('create_sidebar_text_input_url_key'))
+    show_sql = st.session_state.get('show_sql_query')
+    _set_query_param(
+        'show_sql_query',
+        None if show_sql is None else ('1' if show_sql else '0'),
+    )
+    _set_query_param('sd_samples', st.session_state.get('single_dummy_sample_count'))
+
+
+def apply_url_params_to_state() -> None:
+    """Seed sidebar-related session state from URL query parameters."""
+    qp = st.query_params
+
+    if 'url' in qp:
+        url = qp['url']
+        if isinstance(url, str) and url.strip():
+            st.session_state.create_sidebar_text_input_url_key = url.strip()
+
+    if 'show_sql_query' in qp:
+        v = str(qp['show_sql_query']).strip().lower()
+        st.session_state.show_sql_query = v in ('1', 'true', 'yes', 'on')
+
+    if 'sd_samples' in qp:
+        try:
+            n = int(qp['sd_samples'])
+            if 1 <= n <= 1000:
+                st.session_state.single_dummy_sample_count = n
+        except (ValueError, TypeError):
+            pass
 
 
 def app_info() -> None:
@@ -218,12 +267,14 @@ def chat_input_on_submit():
 
 def sample_count_on_change():
     st.session_state.single_dummy_sample_count = st.session_state.single_dummy_sample_count_number_input
+    sync_url_params_from_state()
     change_game_state()
 
 
 def show_sql_query_change():
     # toggle whether to show sql query
     st.session_state.show_sql_query = st.session_state.sql_query_checkbox
+    sync_url_params_from_state()
 
 
 def change_game_state_LIN(file_data,url,path_url,boards,df,everything_df):
@@ -317,11 +368,17 @@ def change_game_state():
         st.session_state.pair_direction = 'NS'
         st.session_state.opponent_pair_direction = 'EW'
 
-        url = st.session_state.create_sidebar_text_input_url_key.strip()
+        url = st.session_state.get('create_sidebar_text_input_url_key', '')
+        if isinstance(url, str):
+            url = url.strip()
+        else:
+            url = ''
         st.text(f"Selected URL: {url}") # using protocol:{get_url_protocol(url)}")
 
         if url is None or url == '' or (get_url_protocol(url) == 'file' and ('/' in url and '\\' in url and '&' in url)):
+            sync_url_params_from_state()
             return
+        sync_url_params_from_state()
 
         path_url = pathlib.Path(url)
         boards = None
@@ -549,7 +606,6 @@ def filter_dataframe(df, group_id, session_id, player_id, partner_id):
 
 def create_sidebar():
     st.sidebar.caption('Build:'+st.session_state.app_datetime)
-    streamlitlib.render_memory_sidebar_caption(st)
 
     # example valid urls
     #default_url = 'https://raw.githubusercontent.com/BSalita/Calculate_PBN_Results/master/DDS_Camrose24_1-%20BENCAM22%20v%20WBridge5.pbn'
@@ -559,7 +615,9 @@ def create_sidebar():
     #default_url = 'https://raw.githubusercontent.com/BSalita/Calculate_PBN_Results/master/DDS_Camrose24_1- BENCAM22 v WBridge5.pbn'
     default_url = 'DDS_Camrose24_1- BENCAM22 v WBridge5.pbn' #'1746217537-NzYzEYivsA@250502.PBN' # '3494191054-1682343601-bsalita.lin'
     #default_url = 'GIB-Thorvald-8638-2024-08-23.pbn'
-    st.sidebar.text_input('Enter URL:', default_url, on_change=change_game_state, key='create_sidebar_text_input_url_key', help='Enter a URL or pathless local file name.') # , on_change=change_game_state
+    if 'create_sidebar_text_input_url_key' not in st.session_state:
+        st.session_state.create_sidebar_text_input_url_key = default_url
+    st.sidebar.text_input('Enter URL:', on_change=change_game_state, key='create_sidebar_text_input_url_key', help='Enter a URL or pathless local file name.') # , on_change=change_game_state
     # using css to change button color for the entire button width. The color was choosen to match the the restrictive text colorizer (:green-background[Go]) used in st.info() below.
     css = """section[data-testid="stSidebar"] div.stButton button {
         background-color: rgba(33, 195, 84, 0.1);
@@ -594,6 +652,7 @@ def create_sidebar():
     st.sidebar.markdown("**Automated Postmortem Apps**")
     st.sidebar.markdown("🔗 [ACBL Postmortem](https://acbl.postmortem.chat)")
     st.sidebar.markdown("🔗 [French ffbridge Postmortem](https://ffbridge.postmortem.chat)")
+    st.sidebar.markdown("🔗 [Calculate PBN](https://pbn.postmortem.chat)")
     #st.sidebar.markdown("🔗 [BridgeWebs Postmortem](https://bridgewebs.postmortem.chat)")
     
     return
@@ -782,23 +841,24 @@ class PBNResultsCalculator(PostmortemBase):
             'results': None,
             'recommended_board_max': 100,
             'save_intermediate_files': False,
+            'player_id': 'Unknown',
         }
         
         for key, value in pbn_specific_vars.items():
             if key not in st.session_state:
                 st.session_state[key] = value
 
-        if 'player_id' in st.query_params:
-            player_id = st.query_params['player_id']
-            if not isinstance(player_id, str):
-                st.error(f'player_id must be a string {player_id}')
-                st.stop()
-            st.session_state.player_id = player_id
-        else:
-            st.session_state.player_id = 'Unknown'
-
         self.reset_game_data()
         self.initialize_website_specific()
+
+        # URL params take precedence over defaults (after reset).
+        apply_url_params_to_state()
+        sync_url_params_from_state()
+
+        # Auto-load when ?url= is present on cold start.
+        url = st.session_state.get('create_sidebar_text_input_url_key')
+        if isinstance(url, str) and url.strip() and 'url' in st.query_params:
+            st.session_state._url_autoload_pending = True
         return
 
 
@@ -826,6 +886,11 @@ class PBNResultsCalculator(PostmortemBase):
         """Create app-specific sidebar."""
         # Call global function for PBN-specific sidebar
         create_sidebar()
+
+    def create_ui(self):
+        """Main UI plus URL sync (same pattern as ffbridge/ACBL)."""
+        super().create_ui()
+        sync_url_params_from_state()
 
     def create_main_content(self):
         """Create app-specific main content."""
@@ -872,6 +937,19 @@ class PBNResultsCalculator(PostmortemBase):
     def ask_sql_query(self):
         """Use the standard SQL query interface from base class."""
         self.ask_standard_sql_query()
+
+    def main(self):
+        """Main entry: same as base, plus Memory footer and URL auto-load."""
+        if 'first_time' not in st.session_state:
+            self.initialize_session_state()
+            self.create_sidebar()
+            if st.session_state.pop('_url_autoload_pending', False):
+                change_game_state()
+        else:
+            self.create_ui()
+        # Memory footer on the main page (same pattern as Elo_Ratings / ffbridge apps).
+        st.caption(streamlitlib.get_memory_caption_line(st))
+        sync_url_params_from_state()
 
 
 if __name__ == "__main__":
